@@ -1,1 +1,321 @@
+#!/usr/bin/env python
+# coding: utf-8
 
+# In[28]:
+
+
+import pandas as pd
+import numpy as np
+
+import matplotlib as mpl
+from matplotlib import pyplot as plt
+import matplotlib.font_manager as fm
+import seaborn as sns
+
+get_ipython().run_line_magic('matplotlib', 'inline')
+mpl.rcParams['axes.unicode_minus'] = False
+plt.style.use('seaborn-colorblind')
+
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report
+
+
+# In[29]:
+
+
+# Read Data 
+df = pd.read_csv('C:/Users/jwkim/Desktop/kbo_data.csv',encoding='CP949')
+
+
+# In[34]:
+
+
+df.head(104)
+
+
+# In[35]:
+
+
+df.describe().T
+
+
+# In[36]:
+
+
+# features : AVG, OPS, RISP(Runner In Scoring Position) AVG, 
+# PH-BA(Pinch Hitter - Batting Average), ERA, WHIP, FPCT(Fielding PerCenTage)
+features = ['AVG', 'OPS', 'RISP', 'PH-BA', 'ERA', 'WHIP', 'FPCT']
+
+
+# In[37]:
+
+
+list(df.loc[df['WIN'] == 1, features])
+
+
+# In[38]:
+
+
+# Check the stats of Winners
+win = df.loc[df['WIN'] == 'Y', features].mean()
+
+
+# In[39]:
+
+
+win
+
+
+# In[40]:
+
+
+post = df.loc[df['POST'] == 'Y', features].mean()
+
+
+# In[41]:
+
+
+all = df.loc[:, features].mean()
+
+
+# In[42]:
+
+
+all
+
+
+# In[43]:
+
+
+feature_df = pd.DataFrame(zip(features,win,post,all), columns=['CATE','WIN', 'POST', 'ALL'])
+
+
+# In[44]:
+
+
+fig, ax = plt.subplots(figsize=(14, 6))
+graph_df = feature_df.melt(id_vars='CATE').rename(columns=str.title)
+sns.barplot(x='Cate', y='Value', hue='Variable', data=graph_df, ax=ax)
+sns.despine(fig)
+
+ax.grid(False)
+ax.set_yticks([])
+
+fig.suptitle('2010-2020 KBO Data')
+
+for rect in ax.patches:
+    y_value = rect.get_height()
+    x_value = rect.get_x() + rect.get_width() / 2
+
+    label = '{:.3f}'.format(y_value)
+    plt.annotate(label, (x_value, y_value), ha='center', fontsize=10)
+    
+plt.show()
+
+
+# In[45]:
+
+
+# Cleaning Data for Classifier
+# Change 'Y' to 1, 'N' to 0
+df['WIN'] = df['WIN'].map(lambda x: 0 if x == 'N' else 1)
+df['POST'] = df['POST'].map(lambda x: 0 if x == 'N' else 1)
+
+
+# In[46]:
+
+
+# Set target data frames
+win_y = df['WIN']
+post_y = df['POST']
+
+
+# In[47]:
+
+
+# Only pick the features with Ratio because it is middle of season
+ratio_X = df[features]
+
+
+# In[48]:
+
+
+ratio_X.head()
+
+
+# In[49]:
+
+
+# Split data set for train & test model
+X_train, X_test, y_train, y_test = train_test_split(ratio_X, win_y, test_size=.2)
+
+
+# In[50]:
+
+
+# Set pipeline with SS & Log_Regressor
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('classifier', LogisticRegression(solver='lbfgs',
+                                      random_state=27))
+])
+
+
+# In[51]:
+
+
+pipeline.fit(X_train, y_train)
+
+
+# In[52]:
+
+
+test_preds = pipeline.predict(X_test)
+
+
+# In[53]:
+
+
+print(classification_report(y_test, test_preds))
+
+
+# In[61]:
+
+
+# current stat of KBO leagues 
+# AVG(타율), OPS('출루율'+'장타율'), RISP('득점권타율'), PH-BA('대타타율'), 
+# ERA('평균자책점'), WHIP('이닝당출루허용'), FPCT('수비율')
+
+stat_2020 = {
+     'NC' : [0.291,0.828,0.330,0.286,4.58,1.42,0.983],
+     'DOOSAN': [0.293,0.792,0.291,0.246,4.31,1.46,0.984],
+     'KT': [0.284,0.794,0.289,0.192,4.54,1.46,0.981],
+     'LG': [0.277,0.777,0.310,0.223,4.37,1.42,0.985],
+     'LOTTE': [0.276,0.761,0.283,0.216,4.64,1.41,0.982],
+     'KIA': [0.274,0.755,0.284,0.258,5.13,1.54,0.981],
+     'KIWOOM': [0.269,0.763,0.281,0.211,4.39,1.39,0.980],
+     'SAMSUNG': [0.268,0.732,0.272,0.260,4.78,1.47,0.980],
+     'SK': [0.250,0.712,0.254,0.203,5.57,1.60,0.981],
+     'HANWHA': [0.245,0.658,0.245,0.220,5.28,1.59,0.981],
+}
+
+
+# In[62]:
+
+
+# Print probabilties for each team
+predicts = {}
+for team, value in stat_2020.items():
+    proba = pipeline.predict_proba([value])[0][1]*100
+    predicts[team] = proba
+    print(f'{team} :  {proba:.4}%')
+
+
+# In[69]:
+
+
+def draw_bar_chart(predicts, title='2021 Prob of KBO Regular Season WIN '):
+    # Draw chart with Seaborn
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.barplot(x=list(predicts.keys()), y=list(predicts.values()), ax=ax)
+    sns.despine(fig)
+
+    ax.grid(False)
+    ax.set_yticks([])
+
+    fig.suptitle(title)
+
+    for rect in ax.patches:
+        y_value = rect.get_height()
+        x_value = rect.get_x() + rect.get_width() / 2
+
+        label = '{:.1f}%'.format(y_value)
+        plt.annotate(label, (x_value, y_value), ha='center', fontsize=10)
+
+    plt.show()
+
+
+# In[70]:
+
+
+# Train model with whole dataset
+pipeline.fit(ratio_X, win_y)
+
+
+# In[71]:
+
+
+# Print probabilties for each team
+predicts = {}
+for team, value in stat_2020.items():
+    proba = pipeline.predict_proba([value])[0][1]*100
+    predicts[team] = proba
+    print(f'{team} :  {proba:.4}%')
+
+
+# In[72]:
+
+
+draw_bar_chart(predicts, '2021 Prob of KBO Regular Season WIN ')
+
+
+# In[73]:
+
+
+# Train & Test data
+X_train, X_test, y_train, y_test = train_test_split(ratio_X, post_y, test_size=.2)
+
+
+# In[74]:
+
+
+# Set pipeline with SS & Log_Regressor
+pp_post_lr = Pipeline([
+    ('scaler', StandardScaler()),
+    ('classifier', LogisticRegression(solver='lbfgs', 
+                                      random_state=27))
+])
+
+
+# In[75]:
+
+
+# Train model
+pp_post_lr.fit(X_train, y_train)
+
+
+# In[76]:
+
+
+# Predict and show model performance
+test_preds = pp_post_lr.predict(X_test)
+
+
+# In[77]:
+
+
+print(classification_report(y_test, test_preds))
+
+
+# In[79]:
+
+
+# Show odds for playoff
+predicts = {}
+for team, value in stat_2020.items():
+    proba = pp_post_lr.predict_proba([value])[0][1]*100
+    predicts[team] = proba
+    print(f'{team} :  {proba:.4}%')
+
+
+# In[80]:
+
+
+# 2020 기준 2021포스트시즌 진출 확률
+draw_bar_chart(predicts, title='2021 Prob of Post Season Enter ')
+
+
+# In[ ]:
